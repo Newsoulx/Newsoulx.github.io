@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"yoursite.com","root":"/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="Java虚拟机在运行Java程序的过程中会把它所管理的内存划分为若干个不同的数据区域。 程序计数器程序计数器是一块较小的线程私有内存空间，可以看做是当前线程执行的字节码的行号指示器。如果线程正在执行的是一个Java方法，这个行号计数器记录的是正在执行的虚拟机字节码指令的地址；如果正在执行的是Native方法，则计数器值为Undefined。此内存区域是唯一一个在Java虚拟机规范中没有规定任何Ou">
+<meta property="og:type" content="article">
+<meta property="og:title" content="JVM内存模型">
+<meta property="og:url" content="http://yoursite.com/2020/05/05/JVM%E5%86%85%E5%AD%98%E6%A8%A1%E5%9E%8B/index.html">
+<meta property="og:site_name" content="犯困的小橙子">
+<meta property="og:description" content="Java虚拟机在运行Java程序的过程中会把它所管理的内存划分为若干个不同的数据区域。 程序计数器程序计数器是一块较小的线程私有内存空间，可以看做是当前线程执行的字节码的行号指示器。如果线程正在执行的是一个Java方法，这个行号计数器记录的是正在执行的虚拟机字节码指令的地址；如果正在执行的是Native方法，则计数器值为Undefined。此内存区域是唯一一个在Java虚拟机规范中没有规定任何Ou">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2020-05-05T13:59:36.000Z">
+<meta property="article:modified_time" content="2020-05-05T14:30:32.328Z">
+<meta property="article:author" content="Newsoulx">
+<meta property="article:tag" content="JVM">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="http://yoursite.com/2020/05/05/JVM%E5%86%85%E5%AD%98%E6%A8%A1%E5%9E%8B/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>JVM内存模型 | 犯困的小橙子</title>
+  
+
+
+  <script>
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "https://hm.baidu.com/hm.js?b6a26a71f6e35e21507f4c3bad39e592";
+      var s = document.getElementsByTagName("script")[0];
+      s.parentNode.insertBefore(hm, s);
+    })();
+  </script>
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">犯困的小橙子</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2020/05/05/JVM%E5%86%85%E5%AD%98%E6%A8%A1%E5%9E%8B/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Newsoulx">
+      <meta itemprop="description" content="待繁华散去，便只剩下一丝温存 :)">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="犯困的小橙子">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          JVM内存模型
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+              
+
+              <time title="创建时间：2020-05-05 21:59:36 / 修改时间：22:30:32" itemprop="dateCreated datePublished" datetime="2020-05-05T21:59:36+08:00">2020-05-05</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><strong>Java虚拟机在运行Java程序的过程中会把它所管理的内存划分为若干个不同的数据区域。</strong></p>
+<h2 id="程序计数器"><a href="#程序计数器" class="headerlink" title="程序计数器"></a>程序计数器</h2><p>程序计数器是一块较小的线程私有内存空间，可以看做是当前线程执行的字节码的行号指示器。如果线程正在执行的是一个Java方法，这个行号计数器记录的是正在执行的虚拟机字节码指令的地址；如果正在执行的是Native方法，则计数器值为Undefined。此内存区域是唯一一个在Java虚拟机规范中没有规定任何<code>OutOfMemoryError</code>的区域。</p>
+<h3 id="Java虚拟机栈"><a href="#Java虚拟机栈" class="headerlink" title="Java虚拟机栈"></a>Java虚拟机栈</h3><p>线程私有的虚拟机栈描述的是Java方法执行的内存模型：每个方法在执行时都会创造一个栈帧，用于存储局部变量表、操作数栈、动态链接、方法出口等信息。每一个方法从调用直至执行完成的过程，都对应一个栈帧在虚拟机栈中入栈到出栈的过程。其中局部变量表中存放了编译器可知的各种基本数据类型（<code>boolean</code>、<code>byte</code>、<code>char</code>、<code>short</code>、<code>int</code>、<code>long</code>、<code>float</code>、<code>double</code>）、对象引用和<code>returnAdress</code>类型。<br>在Java虚拟机规范中，对这个区域规定了两种异常情况：如果线程请求的栈深度大于虚拟机所允许的深度，则抛出<code>StackOverflowError</code>异常；如果虚拟机栈可以动态扩展，但是扩展时无法申请到足够的内存，则抛出<code>OutOfmemoryError</code>异常。</p>
+<h3 id="本地方法栈"><a href="#本地方法栈" class="headerlink" title="本地方法栈"></a>本地方法栈</h3><p>本地方法栈是为虚拟机使用到的Native方法服务，而虚拟机栈则为Java方法服务。与虚拟机栈一样，本地方法栈也会抛出<code>StackOverflowError</code>和<code>OutOfMemoryError</code>异常。</p>
+<h3 id="Java堆"><a href="#Java堆" class="headerlink" title="Java堆"></a>Java堆</h3><p>Java堆是被所有线程共享的一块内存区域，在虚拟机启动时创建，用于存放对象实例，几乎所有的对象实例都在这里分配内存，即所有的对象实例以及数组都要在堆上分配。<br>Java堆是垃圾收集器管理的主要区域。由于现代收集器基本都采用分代收集算法，因此Java堆可以细分为：新生代和老年代。堆内存大小可以通过<code>-Xmx和-Xms</code>控制。若在堆中没有内存完成实例分配，且堆也无法扩展时，将会抛出<code>OutOfMemoryError</code>异常。</p>
+<h3 id="方法区"><a href="#方法区" class="headerlink" title="方法区"></a>方法区</h3><p>方法区与Java堆一样，是各个线程共享的内存区域，用于存储已被虚拟机加载的类信息、常量、静态变量、即时编译器编译后的代码等数据。也被称为永久代，在该部分区域，主要针对常量池的回收和对类型的卸载。同样，也会抛出<code>OutOfMemoryError</code>异常。</p>
+<blockquote>
+<p><em>深入理解java虚拟机</em></p>
+</blockquote>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/JVM/" rel="tag"># JVM</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2020/05/05/Hexo%20Help/" rel="prev" title="Hexo Help">
+      <i class="fa fa-chevron-left"></i> Hexo Help
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#程序计数器"><span class="nav-number">1.</span> <span class="nav-text">程序计数器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Java虚拟机栈"><span class="nav-number">1.1.</span> <span class="nav-text">Java虚拟机栈</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#本地方法栈"><span class="nav-number">1.2.</span> <span class="nav-text">本地方法栈</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Java堆"><span class="nav-number">1.3.</span> <span class="nav-text">Java堆</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#方法区"><span class="nav-number">1.4.</span> <span class="nav-text">方法区</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">Newsoulx</p>
+  <div class="site-description" itemprop="description">待繁华散去，便只剩下一丝温存 :)</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">2</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Newsoulx</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/muse.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
